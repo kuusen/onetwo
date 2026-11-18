@@ -16,8 +16,6 @@ if market:
 else:
     market_type = "moex"
 
-st.divider()
-
 # ============================================================
 # ФУНКЦИИ ДЛЯ MOEX
 # ============================================================
@@ -184,8 +182,6 @@ if market_type == "moex":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
             rub_to_stop = None
             lotsize = None
-            st.caption("👆 Выберите тикер выше, чтобы рассчитать точную позицию.")
-
         submitted = st.form_submit_button("Рассчитать", use_container_width=True)
 
     if submitted:
