@@ -161,7 +161,7 @@ if market_type == "moex":
     with st.form("calc_moex"):
         st.markdown("Параметры расчёта", anchors=False)
 
-        stop_rub = st.number_input("Размер стопа, ₽", min_value=0.01, value=1000.0, step=100.0)
+        stop_rub = st.number_input("Размер стопа, ₽", min_value=0.01, value=3000.0, step=100.0)
 
         if selected and selected["type"] == "futures":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
@@ -171,7 +171,7 @@ if market_type == "moex":
             rub_to_stop = st.number_input(
                 "Рублей до стопа",
                 min_value=0.01,
-                value=0.37,
+                value=0.50,
                 step=0.01,
                 format="%.2f",
                 help="Разница между ценой покупки и ценой стопа в рублях (на 1 бумагу)",
@@ -259,7 +259,7 @@ else:  # market_type == "usa"
     with st.form("calc_usa"):
         st.markdown("Параметры расчёта", anchors=False)
 
-        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=1000.0, step=100.0)
+        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=50.0, step=100.0)
         usd_to_stop = st.number_input(
             "Долларов до стопа",
             min_value=0.01,
