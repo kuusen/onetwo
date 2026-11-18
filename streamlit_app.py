@@ -231,28 +231,36 @@ if market_type == "moex":
 # ============================================================
 
 else:  # market_type == "usa"
-    # Поле поиска вне формы (чтобы обновлялось на лету)
-    search_query = st.text_input("Поиск тикера (например, AAPL или Apple)", value="").strip()
-    ticker_options = search_us_tickers(search_query)
+    # Дефолтный список тикеров для быстрого выбора
+    default_us_tickers = [
+        "AAPL — Apple Inc.",
+        "MSFT — Microsoft Corp.",
+        "TSLA — Tesla Inc.",
+        "NVDA — NVIDIA Corp.",
+        "AMZN — Amazon.com Inc.",
+        "GOOGL — Alphabet Inc.",
+        "META — Meta Platforms Inc."
+    ]
 
     selected_us_label = st.selectbox(
         "Выберите тикер (NASDAQ/NYSE)",
-        options=ticker_options,
+        options=default_us_tickers,
         index=None,
         placeholder="Choose an option",
-        help="Начните вводить название компании или тикер для поиска."
+        accept_new_options=True, # Позволяет ввести свой тикер, если его нет в списке
+        help="Выберите из списка или введите свой тикер и нажмите Enter."
     )
 
-    # Извлекаем чистый тикер (до пробела)
-    ticker_clean = selected_us_label.split(" — ")[0] if selected_us_label else None
+    # Извлекаем чистый тикер (до пробела), если он выбран или введен
+    ticker_clean = selected_us_label.split(" — ")[0].strip().upper() if selected_us_label else None
 
     # Показываем цену для справки, если тикер выбран
-    if selected_us_label and "—" in selected_us_label:
+    if ticker_clean:
         current_price = get_us_price(ticker_clean)
         if current_price:
             st.caption(f"Текущая цена **{ticker_clean}**: ${current_price:.2f}")
         else:
-            st.caption(f"Не удалось получить цену для **{ticker_clean}**.")
+            st.caption(f"Не удалось получить цену для **{ticker_clean}**. Проверьте правильность тикера.")
 
     with st.form("calc_usa"):
         st.markdown("Параметры расчёта", anchors=False)
@@ -270,8 +278,8 @@ else:  # market_type == "usa"
         submitted_usa = st.form_submit_button("Рассчитать", use_container_width=True)
 
     if submitted_usa:
-        if not ticker_clean or selected_us_label in ["Ничего не найдено", "Ошибка поиска"]:
-            st.error("Выберите валидный тикер из списка.")
+        if not ticker_clean:
+            st.error("Выберите или введите тикер.")
             st.stop()
 
         if usd_to_stop <= 0:
