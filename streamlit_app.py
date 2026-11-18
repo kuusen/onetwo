@@ -4,17 +4,28 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="Калькулятор позиции", layout="centered")
+st.set_page_config(page_title="Калькулятор позиции", page_icon="📊", layout="centered")
 st.title("Калькулятор позиции", anchor=False)
 
-# ---------- Тумблер выбора рынка ----------
+# ---------- Переключатель выбора рынка с надписью MOEX ----------
 
-col1, col2, col3 = st.columns([1, 1, 4])
+col1, col2, col3 = st.columns([1, 2, 4])
 
 with col1:
-    st.markdown("<div style='text-align: right; padding-top: 8px; font-weight: 500;'>MOEX</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='text-align: right; padding-top: 8px; font-weight: 500;'>MOEX</div>",
+        unsafe_allow_html=True
+    )
 with col2:
     market = st.toggle("NASDAQ/NYSE", value=False)
+
+# Вот та самая логика, которой не хватало:
+if market:
+    market_type = "usa"
+else:
+    market_type = "moex"
+
+st.divider()
 
 # ============================================================
 # ФУНКЦИИ ДЛЯ MOEX
@@ -73,9 +84,7 @@ def load_futures():
 
 @st.cache_data(ttl=86400)
 def load_all_us_tickers():
-    """Читает локальные файлы nasdaqlisted.txt и otherlisted.txt из репозитория."""
     tickers = []
-    
     files = {
         "NASDAQ": "nasdaqlisted.txt",
         "OTHER": "otherlisted.txt"
@@ -107,7 +116,6 @@ def load_all_us_tickers():
 
 @st.cache_data(ttl=60)
 def get_us_price(ticker):
-    """Получить текущую цену американской акции через yfinance."""
     try:
         stock = yf.Ticker(ticker)
         price = stock.fast_info.get("lastPrice") or stock.fast_info.get("regularMarketPrice")
@@ -161,7 +169,7 @@ if market_type == "moex":
     with st.form("calc_moex"):
         st.markdown("Параметры расчёта", anchors=False)
 
-        stop_rub = st.number_input("Размер стопа, ₽", min_value=0.01, value=3000.0, step=100.0)
+        stop_rub = st.number_input("Размер стопа, ₽", min_value=0.01, value=1000.0, step=100.0)
 
         if selected and selected["type"] == "futures":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
@@ -171,7 +179,7 @@ if market_type == "moex":
             rub_to_stop = st.number_input(
                 "Рублей до стопа",
                 min_value=0.01,
-                value=0.50,
+                value=0.37,
                 step=0.01,
                 format="%.2f",
                 help="Разница между ценой покупки и ценой стопа в рублях (на 1 бумагу)",
@@ -182,6 +190,8 @@ if market_type == "moex":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
             rub_to_stop = None
             lotsize = None
+            st.caption("👆 Выберите тикер выше, чтобы рассчитать точную позицию.")
+
         submitted = st.form_submit_button("Рассчитать", use_container_width=True)
 
     if submitted:
@@ -248,7 +258,6 @@ else:  # market_type == "usa"
 
     ticker_clean = selected_us_label.split(" — ")[0] if selected_us_label else None
 
-    # Вызываем функцию, которой не хватало
     if ticker_clean:
         current_price = get_us_price(ticker_clean)
         if current_price:
@@ -259,7 +268,7 @@ else:  # market_type == "usa"
     with st.form("calc_usa"):
         st.markdown("Параметры расчёта", anchors=False)
 
-        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=50.0, step=100.0)
+        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=1000.0, step=100.0)
         usd_to_stop = st.number_input(
             "Долларов до стопа",
             min_value=0.01,
