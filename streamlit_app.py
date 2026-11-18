@@ -4,7 +4,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="Калькулятор позиции", page_icon="📊", layout="centered")
+st.set_page_config(page_title="Калькулятор позиции", layout="centered")
 st.title("Калькулятор позиции", anchor=False)
 
 # ---------- Переключатель выбора рынка с надписью MOEX ----------
@@ -19,13 +19,10 @@ with col1:
 with col2:
     market = st.toggle("NASDAQ/NYSE", value=False)
 
-# Вот та самая логика, которой не хватало:
 if market:
     market_type = "usa"
 else:
     market_type = "moex"
-
-st.divider()
 
 # ============================================================
 # ФУНКЦИИ ДЛЯ MOEX
@@ -169,7 +166,7 @@ if market_type == "moex":
     with st.form("calc_moex"):
         st.markdown("Параметры расчёта", anchors=False)
 
-        stop_rub = st.number_input("Размер стопа, ₽", min_value=0.01, value=1000.0, step=100.0)
+        stop_rub = st.number_input("Размер стопа, ₽", min_value=0.01, value=3000.0, step=100.0)
 
         if selected and selected["type"] == "futures":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
@@ -179,7 +176,7 @@ if market_type == "moex":
             rub_to_stop = st.number_input(
                 "Рублей до стопа",
                 min_value=0.01,
-                value=0.37,
+                value=0.50,
                 step=0.01,
                 format="%.2f",
                 help="Разница между ценой покупки и ценой стопа в рублях (на 1 бумагу)",
@@ -190,8 +187,6 @@ if market_type == "moex":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
             rub_to_stop = None
             lotsize = None
-            st.caption("👆 Выберите тикер выше, чтобы рассчитать точную позицию.")
-
         submitted = st.form_submit_button("Рассчитать", use_container_width=True)
 
     if submitted:
@@ -268,7 +263,7 @@ else:  # market_type == "usa"
     with st.form("calc_usa"):
         st.markdown("Параметры расчёта", anchors=False)
 
-        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=1000.0, step=100.0)
+        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=50.0, step=100.0)
         usd_to_stop = st.number_input(
             "Долларов до стопа",
             min_value=0.01,
