@@ -119,7 +119,7 @@ if market_type == "moex":
     selected_label = st.selectbox(
         "Выберите тикер",
         options=labels if labels else ["— список недоступен —"],
-        index=0,
+        index=None,
         help="Список подгружается с MOEX ISS и кэшируется на 10 минут.",
     )
     selected = next((o for o in options if o["label"] == selected_label), None)
