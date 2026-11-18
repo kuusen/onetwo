@@ -9,12 +9,12 @@ st.title("Калькулятор позиции", anchor=False)
 
 # ---------- Тумблер выбора рынка ----------
 
-market = st.toggle("NASDAQ/NYSE", value=False)
+col1, col2, col3 = st.columns([1, 1, 4])
 
-if market:
-    market_type = "usa"
-else:
-    market_type = "moex"
+with col1:
+    st.markdown("<div style='text-align: right; padding-top: 8px; font-weight: 500;'>MOEX</div>", unsafe_allow_html=True)
+with col2:
+    market = st.toggle("NASDAQ/NYSE", value=False)
 
 # ============================================================
 # ФУНКЦИИ ДЛЯ MOEX
