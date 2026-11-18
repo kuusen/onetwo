@@ -5,7 +5,7 @@ import yfinance as yf
 import pandas as pd
 import io
 
-st.set_page_config(page_title="Калькулятор позиции", page_icon="📊", layout="centered")
+st.set_page_config(page_title="Калькулятор позиции", layout="centered")
 st.title("Калькулятор позиции", anchor=False)
 
 # ---------- Тумблер выбора рынка ----------
@@ -16,8 +16,6 @@ if market:
     market_type = "usa"
 else:
     market_type = "moex"
-
-st.divider()
 
 # ============================================================
 # ФУНКЦИИ ДЛЯ MOEX
@@ -74,60 +72,42 @@ def load_futures():
 # ФУНКЦИИ ДЛЯ USA
 # ============================================================
 
-@st.cache_data(ttl=86400)  # Кэш на сутки
+@st.cache_data(ttl=86400)
 def load_all_us_tickers():
-    """Скачивает и парсит официальные списки тикеров NASDAQ и NYSE."""
+    """Читает локальные файлы nasdaqlisted.txt и otherlisted.txt из репозитория."""
     tickers = []
     
-    # Используем HTTPS вместо FTP для надежности
-    urls = {
-        "NASDAQ": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
-        "OTHER": "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+    files = {
+        "NASDAQ": "nasdaqlisted.txt",
+        "OTHER": "otherlisted.txt"
     }
     
-    for source, url in urls.items():
+    for source, filename in files.items():
         try:
-            response = requests.get(url, timeout=15)
-            response.raise_for_status()
-            
-            df = pd.read_csv(io.StringIO(response.text), sep="|")
+            # Читаем локальный файл через pandas
+            df = pd.read_csv(filename, sep="|")
             
             # Убираем последнюю строку с метаданными (File Creation Time)
             df = df[~df.iloc[:, 0].astype(str).str.contains("File Creation Time")]
             
             if source == "NASDAQ":
-                # Фильтруем только акции (ETF = N)
                 if "ETF" in df.columns:
                     df = df[df["ETF"] == "N"]
                 for _, row in df.iterrows():
                     tickers.append(f"{row['Symbol']} — {row['Security Name']}")
-            
-            else: # OTHER
+            else:
                 if "ETF" in df.columns:
                     df = df[df["ETF"] == "N"]
                 for _, row in df.iterrows():
                     tickers.append(f"{row['ACT Symbol']} — {row['Security Name']}")
                     
+        except FileNotFoundError:
+            st.error(f"Файл {filename} не найден в корне проекта. Убедитесь, что он добавлен в репозиторий.")
         except Exception as e:
-            st.warning(f"Не удалось загрузить список {source}: {e}")
+            st.warning(f"Ошибка при чтении {filename}: {e}")
             
     tickers.sort()
     return tickers
-
-@st.cache_data(ttl=60)
-def get_us_price(ticker):
-    """Получить текущую цену американской акции через yfinance."""
-    try:
-        stock = yf.Ticker(ticker)
-        price = stock.fast_info.get("lastPrice") or stock.fast_info.get("regularMarketPrice")
-        if price:
-            return float(price)
-        hist = stock.history(period="1d")
-        if not hist.empty:
-            return float(hist["Close"].iloc[-1])
-        return None
-    except Exception:
-        return None
 
 # ============================================================
 # UI: MOEX
@@ -163,7 +143,7 @@ if market_type == "moex":
         "Выберите тикер",
         options=labels if labels else ["— список недоступен —"],
         index=None,
-        placeholder="Choose an option",
+        placeholder="Выбери тикер",
         help="Список подгружается с MOEX ISS и кэшируется на 10 минут.",
     )
     selected = next((o for o in options if o["label"] == selected_label), None)
@@ -194,8 +174,6 @@ if market_type == "moex":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
             rub_to_stop = None
             lotsize = None
-            st.caption("👆 Выберите тикер выше, чтобы рассчитать точную позицию.")
-
         submitted = st.form_submit_button("Рассчитать", use_container_width=True)
 
     if submitted:
