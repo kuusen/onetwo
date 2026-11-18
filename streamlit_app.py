@@ -235,71 +235,96 @@ if market_type == "moex":
 # ============================================================
 
 else:  # market_type == "usa"
-    # Дефолтный список тикеров для быстрого выбора
-    default_us_tickers = [
-        "AAPL — Apple Inc.",
-        "MSFT — Microsoft Corp.",
-        "TSLA — Tesla Inc.",
-        "NVDA — NVIDIA Corp.",
-        "AMZN — Amazon.com Inc.",
-        "GOOGL — Alphabet Inc.",
-        "META — Meta Platforms Inc."
-    ]
+    # Поле поиска вне формы, чтобы список обновлялся на лету
+    search_query = st.text_input(
+        "Поиск тикера (начните вводить, например, A или AAPL)", 
+        value=""
+    ).strip().upper()
 
-    selected_us_label = st.selectbox(
-        "Выберите тикер (NASDAQ/NYSE)",
-        options=default_us_tickers,
-        index=None,
-        placeholder="Choose an option",
-        accept_new_options=True, # Позволяет ввести свой тикер, если его нет в списке
-        help="Выберите из списка или введите свой тикер и нажмите Enter."
-    )
+    # Функция поиска через Yahoo Finance (возвращает тикеры по префиксу)
+    @st.cache_data(ttl=60)
+    def search_us_tickers_by_prefix(query):
+        if not query:
+            return []
+        
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=15"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            quotes = r.json().get("quotes", [])
+            results = []
+            for q in quotes:
+                # Фильтруем только акции США (NASDAQ, NYSE)
+                if q.get("quoteType") == "EQUITY" and q.get("exchange") in ["NMS", "NYQ", "NGM", "NCM"]:
+                    symbol = q.get("symbol", "")
+                    shortname = q.get("shortname") or q.get("longname") or symbol
+                    # Дополнительная фильтрация: тикер должен начинаться с введённых букв
+                    # (Yahoo иногда возвращает не только префиксные совпадения)
+                    if symbol.upper().startswith(query):
+                        results.append(f"{symbol} — {shortname}")
+            return results
+        except Exception:
+            return []
 
-    # Извлекаем чистый тикер (до пробела), если он выбран или введен
-    ticker_clean = selected_us_label.split(" — ")[0].strip().upper() if selected_us_label else None
+    # Получаем список опций на основе введённого текста
+    ticker_options = search_us_tickers_by_prefix(search_query)
 
-    # Показываем цену для справки, если тикер выбран
+    # Если ничего не введено — показываем подсказку
+    if not search_query:
+        st.caption("Начните вводить тикер или название компании.")
+        selected_us_label = None
+    elif not ticker_options:
+        st.caption(f"По запросу «{search_query}» ничего не найдено.")
+        selected_us_label = None
+    else:
+        selected_us_label = st.selectbox(
+            "Выберите тикер (NASDAQ/NYSE)",
+            options=ticker_options,
+            index=None,
+            placeholder="Choose an option",
+        )
+
+    # Извлекаем чистый тикер (до пробела)
+    ticker_clean = selected_us_label.split(" — ")[0] if selected_us_label else None
+
+    # Показываем цену для справки
     if ticker_clean:
         current_price = get_us_price(ticker_clean)
         if current_price:
             st.caption(f"Текущая цена **{ticker_clean}**: ${current_price:.2f}")
         else:
-            st.caption(f"Не удалось получить цену для **{ticker_clean}**. Проверьте правильность тикера.")
+            st.caption(f"Не удалось получить цену для **{ticker_clean}**.")
 
-    with st.form("calc_usa"):
-        st.markdown("Параметры расчёта", anchors=False)
+    # Форма появляется только если тикер выбран
+    if ticker_clean:
+        with st.form("calc_usa"):
+            st.markdown("Параметры расчёта", anchors=False)
 
-        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=50.0, step=100.0)
-        usd_to_stop = st.number_input(
-            "Долларов до стопа",
-            min_value=0.01,
-            value=1.00,
-            step=0.01,
-            format="%.2f",
-            help="Разница между ценой покупки и ценой стопа в долларах (на 1 акцию)",
-        )
+            stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=1000.0, step=100.0)
+            usd_to_stop = st.number_input(
+                "Долларов до стопа",
+                min_value=0.01,
+                value=1.00,
+                step=0.01,
+                format="%.2f",
+                help="Разница между ценой покупки и ценой стопа в долларах (на 1 акцию)",
+            )
 
-        submitted_usa = st.form_submit_button("Рассчитать", use_container_width=True)
+            submitted_usa = st.form_submit_button("Рассчитать", use_container_width=True)
 
-    if submitted_usa:
-        if not ticker_clean:
-            st.error("Выберите или введите тикер.")
-            st.stop()
+        if submitted_usa:
+            if usd_to_stop <= 0:
+                st.error("Значение «Долларов до стопа» должно быть положительным.")
+            else:
+                qty_raw = stop_usd / usd_to_stop
+                qty = math.floor(qty_raw)
 
-        if usd_to_stop <= 0:
-            st.error("Значение «Долларов до стопа» должно быть положительным.")
-            st.stop()
+                st.success(f"Инструмент: **{ticker_clean}** (NASDAQ/NYSE) · лот = 1")
+                st.metric("Количество акций", f"{qty}")
 
-        # Для американских акций лот = 1
-        qty_raw = stop_usd / usd_to_stop
-        qty = math.floor(qty_raw)
+                if qty < 1:
+                    st.warning("Размер стопа слишком мал — округлённое количество меньше 1.")
 
-        st.success(f"Инструмент: **{ticker_clean}** (NASDAQ/NYSE) · лот = 1")
-        st.metric("Количество акций", f"{qty}")
-
-        if qty < 1:
-            st.warning("Размер стопа слишком мал — округлённое количество меньше 1.")
-
-        with st.expander("Показать расчёт"):
-            st.write("**Формула:** `qty = stop_usd / usd_to_stop`")
-            st.write(f"`qty = {stop_usd} / {usd_to_stop:.2f} = {qty_raw:.4f} → {qty}`")
+                with st.expander("Показать расчёт"):
+                    st.write("**Формула:** `qty = stop_usd / usd_to_stop`")
+                    st.write(f"`qty = {stop_usd} / {usd_to_stop:.2f} = {qty_raw:.4f} → {qty}`")
