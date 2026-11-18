@@ -4,7 +4,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="Калькулятор позиции", page_icon="📊", layout="centered")
+st.set_page_config(page_title="Калькулятор позиции", layout="centered")
 st.title("Калькулятор позиции", anchor=False)
 
 # ---------- Тумблер выбора рынка ----------
