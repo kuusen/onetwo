@@ -2,8 +2,10 @@ import math
 import requests
 import streamlit as st
 import yfinance as yf
+import pandas as pd
+import io
 
-st.set_page_config(page_title="Калькулятор позиции", layout="centered")
+st.set_page_config(page_title="Калькулятор позиции", page_icon="📊", layout="centered")
 st.title("Калькулятор позиции", anchor=False)
 
 # ---------- Тумблер выбора рынка ----------
@@ -14,6 +16,8 @@ if market:
     market_type = "usa"
 else:
     market_type = "moex"
+
+st.divider()
 
 # ============================================================
 # ФУНКЦИИ ДЛЯ MOEX
@@ -67,8 +71,48 @@ def load_futures():
         return []
 
 # ============================================================
-# ФУНКЦИИ ДЛЯ USA (Yahoo Finance)
+# ФУНКЦИИ ДЛЯ USA
 # ============================================================
+
+@st.cache_data(ttl=86400)  # Кэш на сутки
+def load_all_us_tickers():
+    """Скачивает и парсит официальные списки тикеров NASDAQ и NYSE."""
+    tickers = []
+    
+    # Используем HTTPS вместо FTP для надежности
+    urls = {
+        "NASDAQ": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
+        "OTHER": "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+    }
+    
+    for source, url in urls.items():
+        try:
+            response = requests.get(url, timeout=15)
+            response.raise_for_status()
+            
+            df = pd.read_csv(io.StringIO(response.text), sep="|")
+            
+            # Убираем последнюю строку с метаданными (File Creation Time)
+            df = df[~df.iloc[:, 0].astype(str).str.contains("File Creation Time")]
+            
+            if source == "NASDAQ":
+                # Фильтруем только акции (ETF = N)
+                if "ETF" in df.columns:
+                    df = df[df["ETF"] == "N"]
+                for _, row in df.iterrows():
+                    tickers.append(f"{row['Symbol']} — {row['Security Name']}")
+            
+            else: # OTHER
+                if "ETF" in df.columns:
+                    df = df[df["ETF"] == "N"]
+                for _, row in df.iterrows():
+                    tickers.append(f"{row['ACT Symbol']} — {row['Security Name']}")
+                    
+        except Exception as e:
+            st.warning(f"Не удалось загрузить список {source}: {e}")
+            
+    tickers.sort()
+    return tickers
 
 @st.cache_data(ttl=60)
 def get_us_price(ticker):
@@ -84,37 +128,6 @@ def get_us_price(ticker):
         return None
     except Exception:
         return None
-
-@st.cache_data(ttl=3600)
-def search_us_tickers(query):
-    """Ищет тикеры на NASDAQ/NYSE через публичный API Yahoo Finance."""
-    if not query:
-        # Дефолтный список, если поиск пустой
-        return [
-            "AAPL — Apple Inc.",
-            "MSFT — Microsoft Corp.",
-            "TSLA — Tesla Inc.",
-            "NVDA — NVIDIA Corp.",
-            "AMZN — Amazon.com Inc.",
-            "GOOGL — Alphabet Inc.",
-            "META — Meta Platforms Inc."
-        ]
-    
-    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=15"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        r = requests.get(url, headers=headers, timeout=10)
-        quotes = r.json().get("quotes", [])
-        results = []
-        for q in quotes:
-            # Фильтруем только акции США (NASDAQ, NYSE)
-            if q.get("quoteType") == "EQUITY" and q.get("exchange") in ["NMS", "NYQ", "NGM", "NCM"]:
-                symbol = q.get("symbol")
-                shortname = q.get("shortname") or q.get("longname") or symbol
-                results.append(f"{symbol} — {shortname}")
-        return results if results else ["Ничего не найдено"]
-    except Exception:
-        return ["Ошибка поиска"]
 
 # ============================================================
 # UI: MOEX
@@ -145,7 +158,7 @@ if market_type == "moex":
     options.sort(key=lambda x: x["label"])
     labels = [o["label"] for o in options]
 
-    # Выбор тикера (вне формы, чтобы реактивно менять поля внутри формы)
+    # Выбор тикера (вне формы)
     selected_label = st.selectbox(
         "Выберите тикер",
         options=labels if labels else ["— список недоступен —"],
@@ -161,12 +174,10 @@ if market_type == "moex":
 
         stop_rub = st.number_input("Размер стопа, ₽", min_value=0.01, value=1000.0, step=100.0)
 
-        # Поля внутри формы меняются в зависимости от того, выбран ли тикер
         if selected and selected["type"] == "futures":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
             rub_to_stop = None
             lotsize = None
-            
         elif selected and selected["type"] == "stock":
             rub_to_stop = st.number_input(
                 "Рублей до стопа",
@@ -178,17 +189,15 @@ if market_type == "moex":
             )
             lotsize = selected["lotsize"]
             st.caption(f"Размер лота: {lotsize}")
-            
         else:
-            # Если тикер ещё не выбран, показываем дефолтное поле "Стоп в тиках"
-            # как на твоем скриншоте, но расчет не сработает
+            # Если тикер ещё не выбран, показываем дефолтное поле
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
             rub_to_stop = None
             lotsize = None
+            st.caption("👆 Выберите тикер выше, чтобы рассчитать точную позицию.")
 
         submitted = st.form_submit_button("Рассчитать", use_container_width=True)
 
-    # Логика расчета срабатывает, только если тикер выбран
     if submitted:
         if selected is None:
             st.warning("Для начала выберите тикер из списка выше.")
@@ -230,61 +239,29 @@ if market_type == "moex":
                     st.write("**Формула:** `qty_lots = stop_rub / (rub_to_stop × lotsize)`")
                     st.write(f"`qty_lots = {stop_rub} / ({rub_to_stop:.2f} × {lotsize}) = {qty_lots_raw:.4f} → {qty_lots}`")
                     st.write(f"`qty_shares = {qty_lots} × {lotsize} = {qty_shares}`")
+
 # ============================================================
 # UI: USA
 # ============================================================
 
 else:  # market_type == "usa"
-    # Поле поиска вне формы, чтобы список обновлялся на лету
-    search_query = st.text_input(
-        "Поиск тикера (начните вводить, например, A или AAPL)", 
-        value=""
-    ).strip().upper()
+    # Загружаем список тикеров (кэшируется на сутки)
+    with st.spinner("Загружаем список акций NASDAQ и NYSE..."):
+        all_us_tickers = load_all_us_tickers()
 
-    # Функция поиска через Yahoo Finance (возвращает тикеры по префиксу)
-    @st.cache_data(ttl=60)
-    def search_us_tickers_by_prefix(query):
-        if not query:
-            return []
-        
-        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=15"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            quotes = r.json().get("quotes", [])
-            results = []
-            for q in quotes:
-                # Фильтруем только акции США (NASDAQ, NYSE)
-                if q.get("quoteType") == "EQUITY" and q.get("exchange") in ["NMS", "NYQ", "NGM", "NCM"]:
-                    symbol = q.get("symbol", "")
-                    shortname = q.get("shortname") or q.get("longname") or symbol
-                    # Дополнительная фильтрация: тикер должен начинаться с введённых букв
-                    # (Yahoo иногда возвращает не только префиксные совпадения)
-                    if symbol.upper().startswith(query):
-                        results.append(f"{symbol} — {shortname}")
-            return results
-        except Exception:
-            return []
+    if not all_us_tickers:
+        st.error("Не удалось загрузить список тикеров. Попробуйте обновить страницу.")
+        st.stop()
 
-    # Получаем список опций на основе введённого текста
-    ticker_options = search_us_tickers_by_prefix(search_query)
+    # Выбор тикера (вне формы)
+    selected_us_label = st.selectbox(
+        "Выберите тикер (NASDAQ/NYSE)",
+        options=all_us_tickers,
+        index=None,
+        placeholder="Начните вводить тикер (например, AAPL)...",
+        help="Список содержит все акции с NYSE и NASDAQ. Начните вводить буквы для фильтрации."
+    )
 
-    # Если ничего не введено — показываем подсказку
-    if not search_query:
-        st.caption("Начните вводить тикер или название компании.")
-        selected_us_label = None
-    elif not ticker_options:
-        st.caption(f"По запросу «{search_query}» ничего не найдено.")
-        selected_us_label = None
-    else:
-        selected_us_label = st.selectbox(
-            "Выберите тикер (NASDAQ/NYSE)",
-            options=ticker_options,
-            index=None,
-            placeholder="Choose an option",
-        )
-
-    # Извлекаем чистый тикер (до пробела)
     ticker_clean = selected_us_label.split(" — ")[0] if selected_us_label else None
 
     # Показываем цену для справки
@@ -293,38 +270,39 @@ else:  # market_type == "usa"
         if current_price:
             st.caption(f"Текущая цена **{ticker_clean}**: ${current_price:.2f}")
         else:
-            st.caption(f"Не удалось получить цену для **{ticker_clean}**.")
+            st.caption(f"Не удалось получить цену для **{ticker_clean}**. Проверьте правильность тикера.")
 
-    # Форма появляется только если тикер выбран
-    if ticker_clean:
-        with st.form("calc_usa"):
-            st.markdown("Параметры расчёта", anchors=False)
+    # Форма отображается ВСЕГДА (как для MOEX)
+    with st.form("calc_usa"):
+        st.markdown("Параметры расчёта", anchors=False)
 
-            stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=1000.0, step=100.0)
-            usd_to_stop = st.number_input(
-                "Долларов до стопа",
-                min_value=0.01,
-                value=1.00,
-                step=0.01,
-                format="%.2f",
-                help="Разница между ценой покупки и ценой стопа в долларах (на 1 акцию)",
-            )
+        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=1000.0, step=100.0)
+        usd_to_stop = st.number_input(
+            "Долларов до стопа",
+            min_value=0.01,
+            value=1.00,
+            step=0.01,
+            format="%.2f",
+            help="Разница между ценой покупки и ценой стопа в долларах (на 1 акцию)",
+        )
 
-            submitted_usa = st.form_submit_button("Рассчитать", use_container_width=True)
+        submitted_usa = st.form_submit_button("Рассчитать", use_container_width=True)
 
-        if submitted_usa:
-            if usd_to_stop <= 0:
-                st.error("Значение «Долларов до стопа» должно быть положительным.")
-            else:
-                qty_raw = stop_usd / usd_to_stop
-                qty = math.floor(qty_raw)
+    if submitted_usa:
+        if not ticker_clean:
+            st.warning("Для начала выберите тикер из списка выше.")
+        elif usd_to_stop <= 0:
+            st.error("Значение «Долларов до стопа» должно быть положительным.")
+        else:
+            qty_raw = stop_usd / usd_to_stop
+            qty = math.floor(qty_raw)
 
-                st.success(f"Инструмент: **{ticker_clean}** (NASDAQ/NYSE) · лот = 1")
-                st.metric("Количество акций", f"{qty}")
+            st.success(f"Инструмент: **{ticker_clean}** (NASDAQ/NYSE) · лот = 1")
+            st.metric("Количество акций", f"{qty}")
 
-                if qty < 1:
-                    st.warning("Размер стопа слишком мал — округлённое количество меньше 1.")
+            if qty < 1:
+                st.warning("Размер стопа слишком мал — округлённое количество меньше 1.")
 
-                with st.expander("Показать расчёт"):
-                    st.write("**Формула:** `qty = stop_usd / usd_to_stop`")
-                    st.write(f"`qty = {stop_usd} / {usd_to_stop:.2f} = {qty_raw:.4f} → {qty}`")
+            with st.expander("Показать расчёт"):
+                st.write("**Формула:** `qty = stop_usd / usd_to_stop`")
+                st.write(f"`qty = {stop_usd} / {usd_to_stop:.2f} = {qty_raw:.4f} → {qty}`")
