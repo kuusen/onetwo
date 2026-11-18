@@ -3,9 +3,8 @@ import requests
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import io
 
-st.set_page_config(page_title="Калькулятор позиции", layout="centered")
+st.set_page_config(page_title="Калькулятор позиции", page_icon="📊", layout="centered")
 st.title("Калькулятор позиции", anchor=False)
 
 # ---------- Тумблер выбора рынка ----------
@@ -16,6 +15,8 @@ if market:
     market_type = "usa"
 else:
     market_type = "moex"
+
+st.divider()
 
 # ============================================================
 # ФУНКЦИИ ДЛЯ MOEX
@@ -84,10 +85,7 @@ def load_all_us_tickers():
     
     for source, filename in files.items():
         try:
-            # Читаем локальный файл через pandas
             df = pd.read_csv(filename, sep="|")
-            
-            # Убираем последнюю строку с метаданными (File Creation Time)
             df = df[~df.iloc[:, 0].astype(str).str.contains("File Creation Time")]
             
             if source == "NASDAQ":
@@ -102,12 +100,27 @@ def load_all_us_tickers():
                     tickers.append(f"{row['ACT Symbol']} — {row['Security Name']}")
                     
         except FileNotFoundError:
-            st.error(f"Файл {filename} не найден в корне проекта. Убедитесь, что он добавлен в репозиторий.")
+            st.error(f"Файл {filename} не найден в корне проекта.")
         except Exception as e:
             st.warning(f"Ошибка при чтении {filename}: {e}")
             
     tickers.sort()
     return tickers
+
+@st.cache_data(ttl=60)
+def get_us_price(ticker):
+    """Получить текущую цену американской акции через yfinance."""
+    try:
+        stock = yf.Ticker(ticker)
+        price = stock.fast_info.get("lastPrice") or stock.fast_info.get("regularMarketPrice")
+        if price:
+            return float(price)
+        hist = stock.history(period="1d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1])
+        return None
+    except Exception:
+        return None
 
 # ============================================================
 # UI: MOEX
@@ -138,17 +151,15 @@ if market_type == "moex":
     options.sort(key=lambda x: x["label"])
     labels = [o["label"] for o in options]
 
-    # Выбор тикера (вне формы)
     selected_label = st.selectbox(
         "Выберите тикер",
         options=labels if labels else ["— список недоступен —"],
         index=None,
-        placeholder="Выбери тикер",
+        placeholder="Choose an option",
         help="Список подгружается с MOEX ISS и кэшируется на 10 минут.",
     )
     selected = next((o for o in options if o["label"] == selected_label), None)
 
-    # Форма отображается ВСЕГДА
     with st.form("calc_moex"):
         st.markdown("Параметры расчёта", anchors=False)
 
@@ -170,10 +181,11 @@ if market_type == "moex":
             lotsize = selected["lotsize"]
             st.caption(f"Размер лота: {lotsize}")
         else:
-            # Если тикер ещё не выбран, показываем дефолтное поле
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
             rub_to_stop = None
             lotsize = None
+            st.caption("👆 Выберите тикер выше, чтобы рассчитать точную позицию.")
+
         submitted = st.form_submit_button("Рассчитать", use_container_width=True)
 
     if submitted:
@@ -223,15 +235,13 @@ if market_type == "moex":
 # ============================================================
 
 else:  # market_type == "usa"
-    # Загружаем список тикеров (кэшируется на сутки)
     with st.spinner("Загружаем список акций NASDAQ и NYSE..."):
         all_us_tickers = load_all_us_tickers()
 
     if not all_us_tickers:
-        st.error("Не удалось загрузить список тикеров. Попробуйте обновить страницу.")
+        st.error("Не удалось загрузить список тикеров. Проверьте наличие файлов nasdaqlisted.txt и otherlisted.txt в репозитории.")
         st.stop()
 
-    # Выбор тикера (вне формы)
     selected_us_label = st.selectbox(
         "Выберите тикер (NASDAQ/NYSE)",
         options=all_us_tickers,
@@ -242,7 +252,7 @@ else:  # market_type == "usa"
 
     ticker_clean = selected_us_label.split(" — ")[0] if selected_us_label else None
 
-    # Показываем цену для справки
+    # Вызываем функцию, которой не хватало
     if ticker_clean:
         current_price = get_us_price(ticker_clean)
         if current_price:
@@ -250,7 +260,6 @@ else:  # market_type == "usa"
         else:
             st.caption(f"Не удалось получить цену для **{ticker_clean}**. Проверьте правильность тикера.")
 
-    # Форма отображается ВСЕГДА (как для MOEX)
     with st.form("calc_usa"):
         st.markdown("Параметры расчёта", anchors=False)
 
