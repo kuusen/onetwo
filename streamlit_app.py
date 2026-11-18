@@ -269,7 +269,7 @@ else:  # market_type == "usa"
     with st.form("calc_usa"):
         st.markdown("Параметры расчёта", anchors=False)
 
-        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=1000.0, step=100.0)
+        stop_usd = st.number_input("Размер стопа, $", min_value=0.01, value=50.0, step=100.0)
         usd_to_stop = st.number_input(
             "Долларов до стопа",
             min_value=0.01,
