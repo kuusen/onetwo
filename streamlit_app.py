@@ -8,15 +8,17 @@ st.title("Калькулятор позиции", anchor=False)
 
 # ---------- Тумблер выбора рынка ----------
 
-market = st.toggle("NASDAQ/NYSE", value=False)
+market = st.toggle("Торговать американские акции (NASDAQ/NYSE)", value=False)
 
 if market:
     market_type = "usa"
 else:
     market_type = "moex"
 
+st.divider()
+
 # ============================================================
-# MOEX (акции TQBR + фьючерсы RFUD)
+# ФУНКЦИИ ДЛЯ MOEX
 # ============================================================
 
 @st.cache_data(ttl=600)
@@ -67,7 +69,7 @@ def load_futures():
         return []
 
 # ============================================================
-# USA (yfinance)
+# ФУНКЦИИ ДЛЯ USA (Yahoo Finance)
 # ============================================================
 
 @st.cache_data(ttl=60)
@@ -75,17 +77,46 @@ def get_us_price(ticker):
     """Получить текущую цену американской акции через yfinance."""
     try:
         stock = yf.Ticker(ticker)
-        # fast_info работает быстрее, чем .info
         price = stock.fast_info.get("lastPrice") or stock.fast_info.get("regularMarketPrice")
         if price:
             return float(price)
-        # fallback
         hist = stock.history(period="1d")
         if not hist.empty:
             return float(hist["Close"].iloc[-1])
         return None
     except Exception:
         return None
+
+@st.cache_data(ttl=3600)
+def search_us_tickers(query):
+    """Ищет тикеры на NASDAQ/NYSE через публичный API Yahoo Finance."""
+    if not query:
+        # Дефолтный список, если поиск пустой
+        return [
+            "AAPL — Apple Inc.",
+            "MSFT — Microsoft Corp.",
+            "TSLA — Tesla Inc.",
+            "NVDA — NVIDIA Corp.",
+            "AMZN — Amazon.com Inc.",
+            "GOOGL — Alphabet Inc.",
+            "META — Meta Platforms Inc."
+        ]
+    
+    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=15"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        quotes = r.json().get("quotes", [])
+        results = []
+        for q in quotes:
+            # Фильтруем только акции США (NASDAQ, NYSE)
+            if q.get("quoteType") == "EQUITY" and q.get("exchange") in ["NMS", "NYQ", "NGM", "NCM"]:
+                symbol = q.get("symbol")
+                shortname = q.get("shortname") or q.get("longname") or symbol
+                results.append(f"{symbol} — {shortname}")
+        return results if results else ["Ничего не найдено"]
+    except Exception:
+        return ["Ошибка поиска"]
 
 # ============================================================
 # UI: MOEX
@@ -120,6 +151,7 @@ if market_type == "moex":
         "Выберите тикер",
         options=labels if labels else ["— список недоступен —"],
         index=None,
+        placeholder="Choose an option",
         help="Список подгружается с MOEX ISS и кэшируется на 10 минут.",
     )
     selected = next((o for o in options if o["label"] == selected_label), None)
@@ -133,7 +165,7 @@ if market_type == "moex":
             ticks = st.number_input("Стоп в тиках", min_value=1, value=10, step=1)
             rub_to_stop = None
             lotsize = None
-        else:
+        elif selected and selected["type"] == "stock":
             rub_to_stop = st.number_input(
                 "Рублей до стопа",
                 min_value=0.01,
@@ -142,8 +174,12 @@ if market_type == "moex":
                 format="%.2f",
                 help="Разница между ценой покупки и ценой стопа в рублях (на 1 бумагу)",
             )
-            lotsize = selected["lotsize"] if selected else 1
+            lotsize = selected["lotsize"]
             st.caption(f"Размер лота: {lotsize}")
+        else:
+            st.info("👆 Сначала выберите инструмент в списке выше.")
+            rub_to_stop = None
+            lotsize = None
 
         submitted = st.form_submit_button("Рассчитать", use_container_width=True)
 
@@ -170,7 +206,8 @@ if market_type == "moex":
                     st.write(f"`qty = {stop_rub} / ({ticks} × {step_price}) = {qty_raw:.4f} → {qty}`")
             else:
                 st.error("Шаг цены не определён в базе MOEX.")
-        else:
+        
+        elif selected["type"] == "stock":
             if rub_to_stop <= 0:
                 st.error("Значение «Рублей до стопа» должно быть положительным.")
                 st.stop()
@@ -196,19 +233,28 @@ if market_type == "moex":
 # ============================================================
 
 else:  # market_type == "usa"
-    ticker_input = st.text_input(
-        "Тикер (NASDAQ/NYSE)",
-        value="AAPL",
-        help="Введите тикер американской акции, например AAPL, MSFT, TSLA.",
-    ).strip().upper()
+    # Поле поиска вне формы (чтобы обновлялось на лету)
+    search_query = st.text_input("Поиск тикера (например, AAPL или Apple)", value="").strip()
+    ticker_options = search_us_tickers(search_query)
 
-    # Показываем текущую цену для справки
-    if ticker_input:
-        current_price = get_us_price(ticker_input)
+    selected_us_label = st.selectbox(
+        "Выберите тикер (NASDAQ/NYSE)",
+        options=ticker_options,
+        index=None,
+        placeholder="Choose an option",
+        help="Начните вводить название компании или тикер для поиска."
+    )
+
+    # Извлекаем чистый тикер (до пробела)
+    ticker_clean = selected_us_label.split(" — ")[0] if selected_us_label else None
+
+    # Показываем цену для справки, если тикер выбран
+    if selected_us_label and "—" in selected_us_label:
+        current_price = get_us_price(ticker_clean)
         if current_price:
-            st.caption(f"Текущая цена **{ticker_input}**: ${current_price:.2f}")
+            st.caption(f"Текущая цена **{ticker_clean}**: ${current_price:.2f}")
         else:
-            st.caption(f"Не удалось получить цену для **{ticker_input}**. Проверьте тикер.")
+            st.caption(f"Не удалось получить цену для **{ticker_clean}**.")
 
     with st.form("calc_usa"):
         st.markdown("Параметры расчёта", anchors=False)
@@ -226,8 +272,8 @@ else:  # market_type == "usa"
         submitted_usa = st.form_submit_button("Рассчитать", use_container_width=True)
 
     if submitted_usa:
-        if not ticker_input:
-            st.error("Введите тикер.")
+        if not ticker_clean or selected_us_label in ["Ничего не найдено", "Ошибка поиска"]:
+            st.error("Выберите валидный тикер из списка.")
             st.stop()
 
         if usd_to_stop <= 0:
@@ -238,7 +284,7 @@ else:  # market_type == "usa"
         qty_raw = stop_usd / usd_to_stop
         qty = math.floor(qty_raw)
 
-        st.success(f"Инструмент: **{ticker_input}** (NASDAQ/NYSE) · лот = 1")
+        st.success(f"Инструмент: **{ticker_clean}** (NASDAQ/NYSE) · лот = 1")
         st.metric("Количество акций", f"{qty}")
 
         if qty < 1:
