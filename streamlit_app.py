@@ -158,7 +158,7 @@ if market_type == "moex":
         "Выберите тикер",
         options=labels if labels else ["— список недоступен —"],
         index=None,
-        placeholder="Choose an option",
+        placeholder="Выберите тикер",
         help="Список подгружается с MOEX ISS и кэшируется на 10 минут.",
     )
     selected = next((o for o in options if o["label"] == selected_label), None)
