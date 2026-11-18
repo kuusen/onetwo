@@ -9,7 +9,7 @@ st.title("Калькулятор позиции", anchor=False)
 
 # ---------- Тумблер выбора рынка ----------
 
-market = st.toggle("Торговать американские акции (NASDAQ/NYSE)", value=False)
+market = st.toggle("NASDAQ/NYSE", value=False)
 
 if market:
     market_type = "usa"
