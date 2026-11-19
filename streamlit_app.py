@@ -7,17 +7,9 @@ import pandas as pd
 st.set_page_config(page_title="Калькулятор позиции", layout="centered")
 st.title("Калькулятор позиции", anchor=False)
 
-# ---------- Переключатель выбора рынка с надписью MOEX ----------
+# ---------- Тумблер выбора рынка ----------
 
-col1, col2, col3 = st.columns([1, 2, 4])
-
-with col1:
-    st.markdown(
-        "<div style='text-align: right; padding-top: 8px; font-weight: 500;'>MOEX</div>",
-        unsafe_allow_html=True
-    )
-with col2:
-    market = st.toggle("NASDAQ/NYSE", value=False)
+market = st.toggle("NASDAQ/NYSE", value=False)
 
 if market:
     market_type = "usa"
@@ -81,7 +73,9 @@ def load_futures():
 
 @st.cache_data(ttl=86400)
 def load_all_us_tickers():
+    """Читает локальные файлы nasdaqlisted.txt и otherlisted.txt из репозитория."""
     tickers = []
+    
     files = {
         "NASDAQ": "nasdaqlisted.txt",
         "OTHER": "otherlisted.txt"
@@ -113,6 +107,7 @@ def load_all_us_tickers():
 
 @st.cache_data(ttl=60)
 def get_us_price(ticker):
+    """Получить текущую цену американской акции через yfinance."""
     try:
         stock = yf.Ticker(ticker)
         price = stock.fast_info.get("lastPrice") or stock.fast_info.get("regularMarketPrice")
@@ -253,6 +248,7 @@ else:  # market_type == "usa"
 
     ticker_clean = selected_us_label.split(" — ")[0] if selected_us_label else None
 
+    # Вызываем функцию, которой не хватало
     if ticker_clean:
         current_price = get_us_price(ticker_clean)
         if current_price:
