@@ -1,7 +1,6 @@
 import math
 import requests
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="Калькулятор позиции", layout="centered")
@@ -104,21 +103,6 @@ def load_all_us_tickers():
             
     tickers.sort()
     return tickers
-
-@st.cache_data(ttl=60)
-def get_us_price(ticker):
-    """Получить текущую цену американской акции через yfinance."""
-    try:
-        stock = yf.Ticker(ticker)
-        price = stock.fast_info.get("lastPrice") or stock.fast_info.get("regularMarketPrice")
-        if price:
-            return float(price)
-        hist = stock.history(period="1d")
-        if not hist.empty:
-            return float(hist["Close"].iloc[-1])
-        return None
-    except Exception:
-        return None
 
 # ============================================================
 # UI: MOEX
@@ -247,14 +231,6 @@ else:  # market_type == "usa"
     )
 
     ticker_clean = selected_us_label.split(" — ")[0] if selected_us_label else None
-
-    # Вызываем функцию, которой не хватало
-    if ticker_clean:
-        current_price = get_us_price(ticker_clean)
-        if current_price:
-            st.caption(f"Текущая цена **{ticker_clean}**: ${current_price:.2f}")
-        else:
-            st.caption(f"Не удалось получить цену для **{ticker_clean}**. Проверьте правильность тикера.")
 
     with st.form("calc_usa"):
         st.markdown("Параметры расчёта", anchors=False)
