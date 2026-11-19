@@ -226,7 +226,7 @@ else:  # market_type == "usa"
         "Выберите тикер (NASDAQ/NYSE)",
         options=all_us_tickers,
         index=None,
-        placeholder="Начните вводить тикер (например, AAPL)...",
+        placeholder="Выберите тикер",
         help="Список содержит все акции с NYSE и NASDAQ. Начните вводить буквы для фильтрации."
     )
 
